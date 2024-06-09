@@ -46,15 +46,19 @@ async def send_api_request(endpoint, method='GET', data=None):
         'Content-Type': 'application/json'
     }
     async with aiohttp.ClientSession() as session:
-        if method == 'GET':
-            async with session.get(f'{MOY_KLASS_API_URL}{endpoint}', headers=headers) as response:
-                return await response.json()
-        elif method == 'POST':
-            async with session.post(f'{MOY_KLASS_API_URL}{endpoint}', headers=headers, json=data) as response:
-                return await response.json()
-        elif method == 'PUT':
-            async with session.put(f'{MOY_KLASS_API_URL}{endpoint}', headers=headers, json=data) as response:
-                return await response.json()
+        try:
+            if method == 'GET':
+                async with session.get(f'{MOY_KLASS_API_URL}{endpoint}', headers=headers) as response:
+                    return await response.json()
+            elif method == 'POST':
+                async with session.post(f'{MOY_KLASS_API_URL}{endpoint}', headers=headers, json=data) as response:
+                    return await response.json()
+            elif method == 'PUT':
+                async with session.put(f'{MOY_KLASS_API_URL}{endpoint}', headers=headers, json=data) as response:
+                    return await response.json()
+        finally:
+            await session.close()
+
 
 # Основная логика бота
 async def handle_student_connection(student_id, teacher_id):
@@ -79,12 +83,12 @@ async def handle_student_connection(student_id, teacher_id):
 @dp.message(Command(commands=['start']))
 async def send_welcome(message: types.Message):
     logger.info(f"Получена команда /start от пользователя {message.from_user.id}")
-    await message.reply("Welcome to the support bot!")
+    await message.reply("Добро пожаловать в бот поддержки!")
 
 @dp.message(Command(commands=['help']))
 async def send_help(message: types.Message):
     logger.info(f"Получена команда /help от пользователя {message.from_user.id}")
-    await message.reply("This is a support bot. Use /start to begin.")
+    await message.reply("Это бот поддержки. Используйте /start для начала.")
 
 @dp.message(F.text.lower().contains('ученик не подключается'))
 async def handle_teacher_message(message: types.Message):
@@ -98,28 +102,41 @@ def get_student_id_from_teacher(teacher_id):
     logger.info(f"Получение ID ученика для преподавателя {teacher_id}")
     return 123456789
 
-
-
 # Обработчик Webhook уведомлений от "Мой Класс"
 async def handle_webhook(request):
     data = await request.json()
     logger.info(f"Получено уведомление от 'Мой Класс': {data}")
-    # Здесь вы можете обработать уведомления от "Мой Класс"
-    if data['type'] == 'message':
+    
+    if 'type' in data and data['type'] == 'message':
         sender_id = data['message']['sender_id']
         receiver_id = data['message']['receiver_id']
         text = data['message']['text']
         
-        # # Определите, кто отправитель и получатель
-        # if is_teacher(sender_id):
-        #     await send_message_to_student(receiver_id, text)
-        # else:
-        #     await send_message_to_teacher(receiver_id, text)
+        # Определите, кто отправитель и получатель
+        if is_teacher(sender_id):
+            await send_message_to_student(receiver_id, text)
+        else:
+            await send_message_to_teacher(receiver_id, text)
+    
     return web.Response()
 
+def is_teacher(user_id):
+    # Логика определения, является ли пользователь учителем
+    # Например, можно хранить списки ID учителей и учеников
+    teachers = []
+    return user_id in teachers
+
+def is_student(user_id):
+    # Логика определения, является ли пользователь студентом
+    # Например, можно хранить списки ID учителей и учеников
+    students = []
+    return user_id in students
+
 async def main():
-    # Устанавливаем webhook
+    # Удаляем старый webhook, если он существует
     await bot.delete_webhook()
+    
+    # Устанавливаем новый webhook
     await bot.set_webhook(WEBHOOK_URL)
     app = web.Application()
     app.router.add_post('/webhook', handle_webhook)
@@ -130,8 +147,15 @@ async def main():
     logger.info("Запуск вебхука")
     await site.start()
 
-    logger.info("Запуск бота")
-    await dp.start_polling(bot)
+    # Закрытие вебхука и остановка приложения корректно при завершении работы
+    try:
+        while True:
+            await asyncio.sleep(3600)  # Run for an hour, then continue
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Остановка бота...")
+    finally:
+        await bot.delete_webhook()
+        await runner.cleanup()
 
 if __name__ == '__main__':
     asyncio.run(main())
