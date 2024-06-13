@@ -18,6 +18,18 @@ MOY_KLASS_API_URL = os.getenv('MOY_KLASS_API_URL')
 # Создаем экземпляр бота
 bot = Bot(token=TELEGRAM_API_TOKEN)
 
+# Функция для разбиения длинного сообщения на части
+def split_message(text, max_length=4096):
+    parts = []
+    while len(text) > max_length:
+        split_pos = text.rfind('\n', 0, max_length)
+        if split_pos == -1:
+            split_pos = max_length
+        parts.append(text[:split_pos])
+        text = text[split_pos:]
+    parts.append(text)
+    return parts
+
 async def get_token():
     url = f"{MOY_KLASS_API_URL}/v1/company/auth/getToken"
     headers = {
@@ -79,6 +91,26 @@ async def get_students(token):
         logging.error(f"Connection error: {e}")
         return None
 
+async def get_lessons(token, params):
+    url = f"{MOY_KLASS_API_URL}/v1/company/lessons"
+    headers = {
+        'x-access-token': token
+    }
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers, params=params) as response:
+                if response.status == 200:
+                    return await response.json()
+                elif response.status == 401:
+                    logging.error("Unauthorized: Check your API key.")
+                    return None
+                else:
+                    logging.error(f"Failed to fetch lessons: {response.status}")
+                    return None
+    except aiohttp.ClientConnectorError as e:
+        logging.error(f"Connection error: {e}")
+        return None
+
 async def send_classes(message: types.Message):
     token = await get_token()
     if not token:
@@ -102,7 +134,8 @@ async def send_classes(message: types.Message):
             f"ID филиала: {class_group['filialId']}\n\n"
         )
 
-    await message.reply(response_text)
+    for part in split_message(response_text):
+        await message.reply(part)
 
 async def send_students(message: types.Message):
     token = await get_token()
@@ -126,7 +159,55 @@ async def send_students(message: types.Message):
             f"Дата изменения: {student.get('updatedAt', 'Не указано')}\n\n"
         )
 
-    await message.reply(response_text)
+    for part in split_message(response_text):
+        await message.reply(part)
+
+async def send_lessons(message: types.Message):
+    # Разбор аргументов команды
+    args = message.text.split()[1:]
+    params = {}
+    
+    for arg in args:
+        key, value = arg.split('=')
+        if key in ['date', 'lessonId', 'roomId', 'filialId', 'classId', 'teacherId']:
+            params[key] = value.split(',')
+        elif key in ['statusId', 'userId', 'offset', 'limit']:
+            params[key] = int(value)
+        elif key in ['includeRecords', 'includeWorkOffs', 'includeMarks', 'includeTasks', 'includeTaskAnswers', 'includeUserSubscriptions', 'includeParams']:
+            params[key] = value.lower() == 'true'
+
+    token = await get_token()
+    if not token:
+        await message.reply("Не удалось получить токен. Проверьте подключение, URL API и API ключ.")
+        return
+    
+    lessons = await get_lessons(token, params)
+    if not lessons:
+        await message.reply("Не удалось получить список занятий. Проверьте подключение, URL API и API ключ.")
+        return
+
+    response_text = "Список занятий:\n"
+    for lesson in lessons.get('lessons', []):
+        response_text += (
+            f"ID: {lesson.get('id', 'Не указано')}\n"
+            f"Дата: {lesson.get('date', 'Не указано')}\n"
+            f"ID группы: {lesson.get('classId', 'Не указано')}\n"
+            f"ID преподавателя: {lesson.get('teacherId', 'Не указано')}\n"
+            f"ID аудитории: {lesson.get('roomId', 'Не указано')}\n"
+            f"ID филиала: {lesson.get('filialId', 'Не указано')}\n"
+            f"Статус: {lesson.get('statusId', 'Не указано')}\n"
+            f"Записи включены: {lesson.get('includeRecords', 'Не указано')}\n"
+            f"Отработки включены: {lesson.get('includeWorkOffs', 'Не указано')}\n"
+            f"Оценки включены: {lesson.get('includeMarks', 'Не указано')}\n"
+            f"Задания включены: {lesson.get('includeTasks', 'Не указано')}\n"
+            f"Ответы на задания включены: {lesson.get('includeTaskAnswers', 'Не указано')}\n"
+            f"Абонементы включены: {lesson.get('includeUserSubscriptions', 'Не указано')}\n"
+            f"Дополнительная информация включена: {lesson.get('includeParams', 'Не указано')}\n\n"
+        )
+
+    for part in split_message(response_text):
+        await message.reply(part)
+
 
 async def main():
     logging.basicConfig(level=logging.INFO)
@@ -136,6 +217,7 @@ async def main():
     # Регистрируем обработчики команд
     dp.message.register(send_classes, Command('classes'))
     dp.message.register(send_students, Command('students'))
+    dp.message.register(send_lessons, Command('lessons'))
 
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
