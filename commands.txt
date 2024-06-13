@@ -1,4 +1,20 @@
+================================================================================
 
 ngrok http 8080
 
 taskkill /f /im ngrok.exe
+
+================================================================================
+
+если выдает это:
+To https://github.com/WizardPoka/tg_my_class.git
+ ! [rejected]        main -> main (non-fast-forward)
+hint: Updates were rejected because the tip of your current branch is behind
+hint: its remote counterpart. Integrate the remote changes (e.g.
+hint: 'git pull ...') before pushing again.
+hint: See the 'Note about fast-forwards' in 'git push --help' for details.
+
+то решением будет:
+git push -f -u origin <name of branch> # main
+
+================================================================================

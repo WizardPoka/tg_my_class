@@ -59,6 +59,26 @@ async def get_classes(token):
         logging.error(f"Connection error: {e}")
         return None
 
+async def get_students(token):
+    url = f"{MOY_KLASS_API_URL}/v1/company/users"
+    headers = {
+        'x-access-token': token
+    }
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    return await response.json()
+                elif response.status == 401:
+                    logging.error("Unauthorized: Check your API key.")
+                    return None
+                else:
+                    logging.error(f"Failed to fetch students: {response.status}")
+                    return None
+    except aiohttp.ClientConnectorError as e:
+        logging.error(f"Connection error: {e}")
+        return None
+
 async def send_classes(message: types.Message):
     token = await get_token()
     if not token:
@@ -79,7 +99,31 @@ async def send_classes(message: types.Message):
             f"Начало занятий: {class_group.get('beginDate', 'Не указано')}\n"
             f"Макс. студентов: {class_group.get('maxStudents', 'Не указано')}\n"
             f"Цена: {class_group.get('price', 'Не указано')}\n"
-            f"ID филиала: {class_group['priceForWidget']}\n\n"
+            f"ID филиала: {class_group['filialId']}\n\n"
+        )
+
+    await message.reply(response_text)
+
+async def send_students(message: types.Message):
+    token = await get_token()
+    if not token:
+        await message.reply("Не удалось получить токен. Проверьте подключение, URL API и API ключ.")
+        return
+    
+    students = await get_students(token)
+    if not students:
+        await message.reply("Не удалось получить список учеников. Проверьте подключение, URL API и API ключ.")
+        return
+
+    response_text = "Список учеников:\n"
+    for student in students.get('users', []):
+        response_text += (
+            f"ID: {student['id']}\n"
+            f"Имя: {student.get('name', 'Не указано')}\n"
+            f"Email: {student.get('email', 'Не указано')}\n"
+            f"Телефон: {student.get('phone', 'Не указано')}\n"
+            f"Дата создания: {student.get('createdAt', 'Не указано')}\n"
+            f"Дата изменения: {student.get('updatedAt', 'Не указано')}\n\n"
         )
 
     await message.reply(response_text)
@@ -89,8 +133,9 @@ async def main():
     # Инициализируем диспетчер
     dp = Dispatcher()
     
-    # Регистрируем обработчик команды /classes
+    # Регистрируем обработчики команд
     dp.message.register(send_classes, Command('classes'))
+    dp.message.register(send_students, Command('students'))
 
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
