@@ -1,3 +1,5 @@
+# ====================================================================================
+
 import os
 import aiohttp
 from aiogram import Bot, Dispatcher, types
@@ -10,6 +12,8 @@ import asyncio
 # Загружаем переменные окружения из .env файла
 load_dotenv()
 
+# ====================================================================================
+
 # Получаем токены и URL из переменных окружения
 TELEGRAM_API_TOKEN = os.getenv('TELEGRAM_API_TOKEN')
 MOY_KLASS_API_KEY = os.getenv('MOY_KLASS_API_KEY')
@@ -17,6 +21,8 @@ MOY_KLASS_API_URL = os.getenv('MOY_KLASS_API_URL')
 
 # Создаем экземпляр бота
 bot = Bot(token=TELEGRAM_API_TOKEN)
+
+# ====================================================================================
 
 # Функция для разбиения длинного сообщения на части
 def split_message(text, max_length=4096):
@@ -29,6 +35,8 @@ def split_message(text, max_length=4096):
         text = text[split_pos:]
     parts.append(text)
     return parts
+
+# ====================================================================================
 
 async def get_token():
     url = f"{MOY_KLASS_API_URL}/v1/company/auth/getToken"
@@ -51,6 +59,8 @@ async def get_token():
         logging.error(f"Connection error while fetching token: {e}")
         return None
 
+# ====================================================================================
+
 async def get_classes(token):
     url = f"{MOY_KLASS_API_URL}/v1/company/classes"
     headers = {
@@ -70,6 +80,8 @@ async def get_classes(token):
     except aiohttp.ClientConnectorError as e:
         logging.error(f"Connection error: {e}")
         return None
+
+# ====================================================================================
 
 async def get_students(token):
     url = f"{MOY_KLASS_API_URL}/v1/company/users"
@@ -91,6 +103,8 @@ async def get_students(token):
         logging.error(f"Connection error: {e}")
         return None
 
+# ====================================================================================
+
 async def get_lessons(token, params):
     url = f"{MOY_KLASS_API_URL}/v1/company/lessons"
     headers = {
@@ -110,6 +124,30 @@ async def get_lessons(token, params):
     except aiohttp.ClientConnectorError as e:
         logging.error(f"Connection error: {e}")
         return None
+
+# ====================================================================================
+
+async def get_lesson_info(token, lesson_id, params):
+    url = f"{MOY_KLASS_API_URL}/v1/company/lessons/{lesson_id}"
+    headers = {
+        'x-access-token': token
+    }
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers, params=params) as response:
+                if response.status == 200:
+                    return await response.json()
+                elif response.status == 401:
+                    logging.error("Unauthorized: Check your API key.")
+                    return None
+                else:
+                    logging.error(f"Failed to fetch lesson info: {response.status}")
+                    return None
+    except aiohttp.ClientConnectorError as e:
+        logging.error(f"Connection error: {e}")
+        return None
+
+# ====================================================================================
 
 async def send_classes(message: types.Message):
     token = await get_token()
@@ -137,6 +175,8 @@ async def send_classes(message: types.Message):
     for part in split_message(response_text):
         await message.reply(part)
 
+# ====================================================================================
+
 async def send_students(message: types.Message):
     token = await get_token()
     if not token:
@@ -162,11 +202,13 @@ async def send_students(message: types.Message):
     for part in split_message(response_text):
         await message.reply(part)
 
+# ====================================================================================
+
 async def send_lessons(message: types.Message):
     # Разбор аргументов команды
     args = message.text.split()[1:]
     params = {}
-    
+
     for arg in args:
         key, value = arg.split('=')
         if key in ['date', 'lessonId', 'roomId', 'filialId', 'classId', 'teacherId']:
@@ -180,7 +222,7 @@ async def send_lessons(message: types.Message):
     if not token:
         await message.reply("Не удалось получить токен. Проверьте подключение, URL API и API ключ.")
         return
-    
+
     lessons = await get_lessons(token, params)
     if not lessons:
         await message.reply("Не удалось получить список занятий. Проверьте подключение, URL API и API ключ.")
@@ -191,23 +233,108 @@ async def send_lessons(message: types.Message):
         response_text += (
             f"ID: {lesson.get('id', 'Не указано')}\n"
             f"Дата: {lesson.get('date', 'Не указано')}\n"
-            f"ID группы: {lesson.get('classId', 'Не указано')}\n"
-            f"ID преподавателя: {lesson.get('teacherId', 'Не указано')}\n"
-            f"ID аудитории: {lesson.get('roomId', 'Не указано')}\n"
+            f"Время начала: {lesson.get('beginTime', 'Не указано')}\n"
+            f"Время окончания: {lesson.get('endTime', 'Не указано')}\n"
+            f"Создано: {lesson.get('createdAt', 'Не указано')}\n"
             f"ID филиала: {lesson.get('filialId', 'Не указано')}\n"
-            f"Статус: {lesson.get('statusId', 'Не указано')}\n"
-            f"Записи включены: {lesson.get('includeRecords', 'Не указано')}\n"
-            f"Отработки включены: {lesson.get('includeWorkOffs', 'Не указано')}\n"
-            f"Оценки включены: {lesson.get('includeMarks', 'Не указано')}\n"
-            f"Задания включены: {lesson.get('includeTasks', 'Не указано')}\n"
-            f"Ответы на задания включены: {lesson.get('includeTaskAnswers', 'Не указано')}\n"
-            f"Абонементы включены: {lesson.get('includeUserSubscriptions', 'Не указано')}\n"
-            f"Дополнительная информация включена: {lesson.get('includeParams', 'Не указано')}\n\n"
+            f"ID аудитории: {lesson.get('roomId', 'Не указано')}\n"
+            f"ID группы: {lesson.get('classId', 'Не указано')}\n"
+            f"Статус: {'Проведено' if lesson.get('status') == 1 else 'Не проведено'}\n"
+            f"Комментарий: {lesson.get('comment', 'Не указан')}\n"
+            f"Максимум студентов: {lesson.get('maxStudents', 'Не указано')}\n"
+            f"Тема: {lesson.get('topic', 'Не указана')}\n"
+            f"Описание: {lesson.get('description', 'Не указано')}\n"
+            f"Учителя: {', '.join(map(str, lesson.get('teacherIds', ['Не указаны']))) }\n"
+            f"Записи: {lesson.get('records', 'Не указаны')}\n"
+            f"Домашнее задание: {lesson.get('homeTask', 'Не указано')}\n"
+            f"Задание на занятие: {lesson.get('lessonTask', 'Не указано')}\n"
+            f"Оценки: {lesson.get('marks', 'Не указаны')}\n"
+            f"Ответы на задания: {lesson.get('answers', 'Не указаны')}\n\n"
         )
 
     for part in split_message(response_text):
         await message.reply(part)
 
+# ====================================================================================
+
+async def send_lessons_ids(message: types.Message):
+    args = message.text.split()[1:]
+    params = {
+        "limit": 500  # Максимальный лимит, чтобы получить как можно больше занятий
+    }
+
+    # Проверяем, есть ли в аргументах даты
+    if len(args) >= 1:
+        params['date'] = args[:2]  # Берем максимум два значения даты
+
+    token = await get_token()
+    if not token:
+        await message.reply("Не удалось получить токен. Проверьте подключение, URL API и API ключ.")
+        return
+
+    lessons = await get_lessons(token, params)
+    if not lessons:
+        await message.reply("Не удалось получить список занятий. Проверьте подключение, URL API и API ключ.")
+        return
+
+    lessons_ids = [lesson['id'] for lesson in lessons.get('lessons', [])]
+    response_text = "Список ID занятий:\n" + "\n".join(map(str, lessons_ids))
+
+    for part in split_message(response_text):
+        await message.reply(part)
+
+# ====================================================================================
+
+async def send_lesson_info(message: types.Message):
+    args = message.text.split()[1:]
+    if not args:
+        await message.reply("Укажите ID занятия.")
+        return
+
+    lesson_id = args[0]
+    params = {}
+
+    for arg in args[1:]:
+        key, value = arg.split('=')
+        if key in ['includeRecords', 'includeWorkOffs', 'includeMarks', 'includeTasks', 'includeTaskAnswers', 'includeParams']:
+            params[key] = value.lower() == 'true'
+
+    token = await get_token()
+    if not token:
+        await message.reply("Не удалось получить токен. Проверьте подключение, URL API и API ключ.")
+        return
+
+    lesson_info = await get_lesson_info(token, lesson_id, params)
+    if not lesson_info:
+        await message.reply("Не удалось получить информацию о занятии. Проверьте подключение, URL API и API ключ.")
+        return
+
+    response_text = (
+        f"ID: {lesson_info.get('id', 'Не указано')}\n"
+        f"Дата: {lesson_info.get('date', 'Не указано')}\n"
+        f"Время начала: {lesson_info.get('beginTime', 'Не указано')}\n"
+        f"Время окончания: {lesson_info.get('endTime', 'Не указано')}\n"
+        f"Создано: {lesson_info.get('createdAt', 'Не указано')}\n"
+        f"ID филиала: {lesson_info.get('filialId', 'Не указано')}\n"
+        f"ID аудитории: {lesson_info.get('roomId', 'Не указано')}\n"
+        f"ID группы: {lesson_info.get('classId', 'Не указано')}\n"
+        f"Статус: {'Проведено' if lesson_info.get('status') == 1 else 'Не проведено'}\n"
+        f"Комментарий: {lesson_info.get('comment', 'Не указан')}\n"
+        f"Максимум студентов: {lesson_info.get('maxStudents', 'Не указано')}\n"
+        f"Тема: {lesson_info.get('topic', 'Не указана')}\n"
+        f"Описание: {lesson_info.get('description', 'Не указано')}\n"
+        f"Учителя: {', '.join(map(str, lesson_info.get('teacherIds', ['Не указаны']))) }\n"
+        f"Записи: {lesson_info.get('records', 'Не указаны')}\n"
+        f"Домашнее задание: {lesson_info.get('homeTask', 'Не указано')}\n"
+        f"Задание на занятие: {lesson_info.get('lessonTask', 'Не указано')}\n"
+        f"Оценки: {lesson_info.get('marks', 'Не указаны')}\n"
+        f"Ответы на задания: {lesson_info.get('answers', 'Не указаны')}\n"
+    )
+
+    for part in split_message(response_text):
+        await message.reply(part)
+
+# ====================================================================================
 
 async def main():
     logging.basicConfig(level=logging.INFO)
@@ -218,12 +345,18 @@ async def main():
     dp.message.register(send_classes, Command('classes'))
     dp.message.register(send_students, Command('students'))
     dp.message.register(send_lessons, Command('lessons'))
+    dp.message.register(send_lessons_ids, Command('lessons_ids'))
+    dp.message.register(send_lesson_info, Command('lesson_info')) 
 
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
+
+# ====================================================================================
 
 if __name__ == '__main__':
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
         print("Exit")
+
+# ====================================================================================
